@@ -1,0 +1,83 @@
+---
+title: "Cyclistic Analysis"
+author: "Airel Camilo"
+date: "2023-03-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Process
+
+Install the packages
+```{r}
+install.packages("tidyverse")
+library(tidyverse)
+library(dplyr)
+library(readr)
+```
+
+Merge the six dataset into one called tripdata, remove null value and duplicate rows
+```{r}
+tripdata <- list.files(path="divvy-tripdata", full.names = TRUE) %>%
+  lapply(read_csv) %>% 
+  bind_rows %>%
+  drop_na()
+
+tripdata <- tripdata[!duplicated(tripdata$ride_id), ]
+```
+
+Add columns such as, ride_length, hour_used, day_used, and month_used
+```{r}
+tripdata_new <- tripdata %>%
+  mutate(ride_length = difftime(ended_at, started_at, units="mins")) %>%
+  mutate(hour_used = format(started_at, "%H")) %>%
+  mutate(day_used = format(started_at, "%A")) %>%
+  mutate(month_used = format(started_at, "%B"))
+```
+
+Drop unnecessary fields, remove negative ride_length and outlier in ride_length
+```{r}
+tripdata_final <- subset(tripdata_new, select = -c(started_at,ended_at,start_station_name,start_station_id, end_station_name,end_station_id,start_lat,start_lng,end_lat,end_lng))
+
+tripdata_final <- subset(tripdata_final, ride_length > 0)
+
+Q <- quantile(tripdata_final$ride_length, probs=c(.25,.75)) # Find Q1 and Q3 for calculating RUB
+# RUB = Q3 + 1.5(Q3-Q1)
+RUB <- Q[2]  + 1.5*(Q[2]-Q[1])
+tripdata_final <- subset(tripdata_final, ride_length < RUB)
+
+```
+
+Make different table for each categories and group data by member type
+```{r}
+member_per_group <- tripdata_final %>%
+  group_by(member_casual) %>%
+  summarize(total_ride = n(), avg_ride_length = mean(ride_length))
+
+bike_type_per_group <- count(tripdata_final, member_casual, rideable_type) %>%
+  rename(total = n)
+
+hour_used_per_group <- tripdata_final %>%
+  group_by(member_casual, hour_used) %>%
+  summarize(total_ride = n(), avg_ride_length = mean(ride_length))
+
+day_used_per_group <- tripdata_final %>%
+  group_by(member_casual, day_used) %>%
+  summarize(total_ride = n(), avg_ride_length = mean(ride_length))
+
+month_used_per_group <- tripdata_final %>%
+  group_by(member_casual, month_used) %>%
+  summarize(total_ride = n(), avg_ride_length = mean(ride_length))
+```
+Save the tables to be used in Tableau visualization
+```{r}
+write_csv(member_per_group, path = "member-group-tripdata.csv")
+write_csv(bike_type_per_group, path = "bike-type-group-tripdata.csv")
+write_csv(hour_used_per_group, path = "hour-group-tripdata.csv")
+write_csv(day_used_per_group, path = "day-group-tripdata.csv")
+write_csv(month_used_per_group, path = "month-group-tripdata.csv")
+```
+
